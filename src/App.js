@@ -4,11 +4,13 @@ import './App.css';
 import CallViewMethodButton from './components/CallViewMethodButton';
 import ConnectToMetamaskButton from './components/ConnectToMetamaskButton';
 // Update contract.abi.json to contain your contract's ABI
-import contractAbi from './contract.abi.json';
+import Web3NFT from './abis/Web3NFT.json';
 import useConnection from './hooks/Connection';
+import axios from 'axios';
 
 // Modify this to be your contract's address
-const contractAddress = '0x98C47B781Bcb1A0E3c1155822fA3199359576e9f';
+const contractAddress = '0xbB37f3737e2bDE08ACb113c22F446F8f439cD98E';
+//const contractAddress = '0x3620efB8C21A1332A20854f6F24392B981b0BcF1';
 
 if (window.ethereum) {
   console.log("window.eth")
@@ -17,112 +19,125 @@ if (window.ethereum) {
   alert("No MetaMask detected, the website will crash")
 }
 
-const provider = new ethers.providers.Web3Provider(window.ethereum);
-const contract = new ethers.Contract(
-  contractAddress,
-  contractAbi,
-  provider.getSigner(0),
-);
+let initialState = [];
 
 function App() {
   // Custom React hook that listens to MetaMask events
   // Check it out in ./hooks/Connection.js
   const { isConnected, address } = useConnection();
+  const [nfts, setNfts] = useState(initialState);
+  const [loadingState, setLoadingState] = useState('not-loaded');
+
 
   // A few state variables just to demonstrate different functionality of the ethers.js library
   const [owner, setOwner] = useState('');
   const [balance, setBalance] = useState('');
-  const [eventCount, setEventCount] = useState(0);
 
-  const incrementEventCount = () => {
-    setEventCount((c) => c + 1);
-  };
+
 
   useEffect(() => {
     if (isConnected) {
-      setEventCount(0);
 
-      // You can subscribe to contract events by specifying the name of the
-      // event, and then this callback will be executed every time such an
-      // event occurs
-      contract.on('SignUpEvent', (recruit, recruiter, initiationFee) => {
-        console.log('SignUpEvent', recruit, recruiter, initiationFee);
-      });
+      if(address != null) {
+        alert("connected to: "+address)
+        fetchNFTs()
+      }
 
-      // You can also access filters generated from the ABI.
-      // Passing arguments to the filter generator will filter the events by
-      // indexed argument.
-      // Recall that the signature of this event is:
-      // > event CreditWithdrawnEvent(address indexed from, uint256 amount);
-      contract.on(contract.filters.CreditWithdrawnEvent(address), (...args) => {
-        // Only detects events where the current user withdraws credit
-        console.log('CreditWithdrawnEvent with filter', args);
-        incrementEventCount();
-      });
-
-      return () => {
-        contract.removeAllListeners();
-      };
+      
     }
   }, [isConnected, address]);
 
-  // Read-only method call
-  const getOwner = async () => {
-    setOwner(await contract.owner());
-  };
+  async function fetchNFTs() {
 
-  // Read-only method call, returns a BigNumber
-  const getBalance = async () => {
-    setBalance((await contract.balanceOf(address)).toString());
-  };
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    const signer = provider.getSigner()
 
-  // Write method with attached ETH
-  const buy = async () => {
-    const valueStr = prompt(
-      'How much would you like to buy?',
-      'Value in ether',
-    );
 
-    if (valueStr !== null) {
-      // This promise will reject if the user cancels the transaction
-      await contract.buy({
-        // Attach additional value to this transaction
-        value: ethers.utils.parseEther(valueStr),
-      });
-      alert('Success!');
-    }
-  };
+    const contract = new ethers.Contract(contractAddress, Web3NFT.abi, signer)
+    
+    
+    const addressBalance = await contract.balanceOf(address)
+    console.log("address balance: "+addressBalance)
+    const data = await contract.getTokensOfOwner(address)
+    console.log("IDs of tokens I own: "+data)
 
-  return provider ? (
-    <main>
-      {isConnected ? (
-        <>
-          <p>You are connected to a web3 provider.</p>
-          <p>Your current wallet address is {address}.</p>
-          <CallViewMethodButton
-            name="Balance"
-            onUpdate={getBalance}
-            value={balance}
-          />
-          <CallViewMethodButton
-            name="Owner"
-            onUpdate={getOwner}
-            value={owner}
-          />
-          <button type="button" onClick={buy}>
-            Buy
-          </button>
-          <p>Credit Withdrawn Events: {eventCount}</p>
-        </>
-      ) : (
-        <ConnectToMetamaskButton />
-      )}
-    </main>
-  ) : (
-    <p>
-      Please install a Web3 provider like{' '}
-      <a href="https://metamask.io/">MetaMask</a> to use this app.
-    </p>
+
+    
+    const items = await Promise.all(data.map(async i => {
+        const tokenUri = await contract.tokenURI(i.toNumber())
+        console.log("token uri: "+tokenUri)
+        const meta = await axios.get(tokenUri)
+        let item = {
+          tokenId: i.toNumber(),
+          name: meta.data.name,
+          description: meta.data.description,
+          image: meta.data.image
+        }
+
+        console.log("TESTING Item")
+        console.log("tokenId: "+item.tokenId)
+        console.log("name: "+item.name)
+        console.log("desription: "+item.description)
+        console.log("image: "+item.image)
+
+        return item
+
+    }))
+    setNfts(items)
+    setLoadingState('loaded')
+
+  }
+
+
+
+  return (
+
+    <>
+
+
+    <div className="NFTS">
+      {nfts.map((nft, i) => (
+        <p key={i}>{JSON.stringify(nft)}</p>
+      ))}
+    </div>
+
+
+    <div>
+      <ConnectToMetamaskButton/>
+      <div className="container">
+      <div className="row">
+      <div className="container">
+      <div className="row">
+
+      {
+        nfts.map((nft, i) => (
+          <div key={i} className="col"><div key={i} className="card">
+            <a href={nft.external_url}>
+            
+              <img
+              src={nft.image}
+              width="300px"
+              height="300px"/>
+
+            </a>
+              <div className="card-body">
+            <h5 className="card-title">{nft.name}</h5>
+            <p className="card-text">{nft.description}</p>
+            </div>
+            
+            </div>
+            </div>
+
+        ))
+      }
+
+      </div>
+      </div>
+      </div>
+      </div>
+    </div>
+    </>
+    
   );
 }
 
